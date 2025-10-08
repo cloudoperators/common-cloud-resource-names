@@ -1,0 +1,78 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+    name: pod.k8s-registry.{{ .Values.ccrn.apiGroup }}
+    annotations:
+        ccrn/v1.urn-template: "urn:ccrn:<ccrn>/<cluster>/<namespace>/<name>"
+        ccrn/v1.url-template: "https://<ccrn>/<cluster>/<namespace>/<name>"
+spec:
+    group: k8s-registry.{{ .Values.ccrn.apiGroup }}
+    names:
+        kind: pod
+        listKind: podList
+        plural: pods
+        singular: pod
+    scope: Namespaced
+    versions:
+        -   name: v1
+            served: true
+            storage: true
+            schema:
+                openAPIV3Schema:
+                    type: object
+                    required: [ "ccrn", "cluster", "namespace", "name" ]
+                    properties:
+                        # Required
+                        ccrn:
+                            type: string
+                            enum: [ "pod.k8s-registry.{{ .Values.ccrn.apiGroup }}/v1" ]
+                        cluster:
+                            type: string
+                            description: "The cluster the pod is running in"
+                            enum: [ "eu-de-1", "eu-de-2", "eu-de-3", "*" ]
+                        namespace:
+                            type: string
+                            description: "The Namespace the pod belongs to"
+                            pattern: "^([a-z0-9]([a-z0-9-]*[a-z0-9])?|\\*)$"
+                            maxLength: 63
+                        name:
+                            type: string
+                            description: "The name of the Pod"
+                            pattern: "^([a-z0-9]([-a-z0-9]*[a-z0-9])?|\\*)$"
+                            maxLength: 253
+
+                        # Optional
+                        nodeName:
+                            type: string
+                            description: "Node where the pod is running"
+                            pattern: "^([a-z0-9]([-a-z0-9]*[a-z0-9])?|\\*)$"
+                        labels:
+                            type: object
+                            additionalProperties:
+                                type: string
+                            description: "Labels for selecting groups of pods"
+                        ownerKind:
+                            type: string
+                            description: "Kind of the owner resource"
+                            enum: [ "Deployment", "StatefulSet", "DaemonSet", "Job", "CronJob", "ReplicaSet", "*" ]
+                        ownerName:
+                            type: string
+                            description: "Name of the owner resource"
+                            pattern: "^([a-z0-9]([-a-z0-9]*[a-z0-9])?|\\*)$"
+
+            additionalPrinterColumns:
+                -   name: CCRN
+                    type: string
+                    jsonPath: .ccrn
+                -   name: Cluster
+                    type: string
+                    jsonPath: .cluster
+                -   name: Namespace
+                    type: string
+                    jsonPath: .namespace
+                -   name: Name
+                    type: string
+                    jsonPath: .name
+                -   name: Age
+                    type: date
+                    jsonPath: .metadata.creationTimestamp

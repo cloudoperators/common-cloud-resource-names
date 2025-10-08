@@ -1,0 +1,51 @@
+{{- if .Values.rbac.create -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "ccrn.fullname" . }}
+  labels:
+    {{- include "ccrn.labels" . | nindent 4 }}
+rules:
+  # Allow the webhook to read/write CCRN resources
+    -   apiGroups: [ "validate.{{ .Values.ccrn.apiGroup }} " ]
+        resources: ["ccrns", "ccrns/status"]
+        verbs: ["get", "list", "watch", "create", "update", "patch"]
+
+  # Specifically target the problematic API group from the error message
+    -   apiGroups: [ "k8s-registry.{{ .Values.ccrn.apiGroup }} " ]
+        resources: ["*"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+    -   apiGroups: [ "keystone.openstack.{{ .Values.ccrn.apiGroup }} " ]
+        resources: [ "*" ]
+        verbs: [ "get", "list", "watch", "create", "update", "patch", "delete" ]
+    -   apiGroups: [ "vault.{{ .Values.ccrn.apiGroup }} " ]
+        resources: [ "*" ]
+        verbs: [ "get", "list", "watch", "create", "update", "patch", "delete" ]
+
+    # Allow the webhook to access all resource types under any API group in the {{ .Values.ccrn.apiGroup }}  domain
+    -   apiGroups: [ "*.{{ .Values.ccrn.apiGroup }} " ]
+        resources: ["*"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+
+
+  # Allow the webhook to discover and access all CRDs for validation
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources: ["customresourcedefinitions"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "ccrn.fullname" . }}
+  labels:
+    {{- include "ccrn.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "ccrn.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "ccrn.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

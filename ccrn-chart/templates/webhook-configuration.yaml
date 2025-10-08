@@ -1,0 +1,24 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: {{ include "ccrn.fullname" . }}-webhook
+  labels:
+    {{- include "ccrn.labels" . | nindent 4 }}
+webhooks:
+  - name: {{ include "ccrn.webhookName" . }}
+    sideEffects: None
+    admissionReviewVersions: ["v1", "v1beta1"]
+    timeoutSeconds: {{ .Values.webhook.timeoutSeconds }}
+    failurePolicy: {{ .Values.webhook.failurePolicy }}
+    clientConfig:
+      service:
+        name: {{ include "ccrn.fullname" . }}
+        namespace: {{ .Release.Namespace }}
+        path: {{ .Values.webhook.path }}
+      # Using a static CA bundle
+      caBundle: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSURGVENDQWYyZ0F3SUJBZ0lVYTZER2ZMcVlvTWRIMC9mSVI1UkVJMUVFRWJZd0RRWUpLb1pJaHZjTkFRRUwKQlFBd0dqRVlNQllHQTFVRUF3d1BRME5TVGlCWFpXSm9iMjlySUVOQk1CNFhEVEkxTURNd016SXlNRE13TjFvWApEVE0xTURNd01USXlNRE13TjFvd0dqRVlNQllHQTFVRUF3d1BRME5TVGlCWFpXSm9iMjlySUVOQk1JSUJJakFOCkJna3Foa2lHOXcwQkFRRUZBQU9DQVE4QU1JSUJDZ0tDQVFFQXJoUkZZR09qTHFpVlVYRFNGb3g2WEwrYWlGYkcKMG9FekcxNWRzQ0ErcE56OVlHODF5TVBkb2h3dXcwRWRsblcxVEpWSGc1MWk5YWt3ZHBuR1ZFVEdycmxEZGRNRApXc05jbFMrSm8ycXBONVF3WGY0eVlyQ3Z3VVhmY1BwS1lmUkdlSlh1S05zTGszbE5EYUo4N1phSHEvODVkbVZGCkxvQlJkV1pkNjl5SndMZ0tvalpSeVhsSGl4Z1d0ZU5Mb2V0azArcjFmd0lrQXNCUU9GQml4bC9XQ0NhT2EzWjYKeHE2SzBWRHdKWThhZEZueEZYbTMvaXFpY2VZdThHQVhpd1BoeGFNcmo1R3Z4ZC81aHQxbXcxRmRLZ2QrcTROKwpnL0NSUDJrUUxEK2lxM1JJQTBHVllrSSsvK1ZBaVRyUHA3SXZVdm5OQUNPeXp5SVBKNmpKM3p1V1h3SURBUUFCCm8xTXdVVEFkQmdOVkhRNEVGZ1FVakhqVkNDV2R3WHpJcXNJVnpWVHlIdFFEM1I0d0h3WURWUjBqQkJnd0ZvQVUKakhqVkNDV2R3WHpJcXNJVnpWVHlIdFFEM1I0d0R3WURWUjBUQVFIL0JBVXdBd0VCL3pBTkJna3Foa2lHOXcwQgpBUXNGQUFPQ0FRRUFPSzJ1MDRXSFJWejQ0YkYwZ1g0VHdPbVVjQ3NlR1p5VjFZMHhiY3plaDgxMW5jSkRFYkl5CjVsSkxsei9tYWlTY3k0UHdrdjc3L3JPSm9iS2xWZWdCdHNCb1NrV2xKeXNyQlo5WkQzYW9kZ0xuN0tSWUcyTm8KU1VZeFM4allaNU9oWnlvSzE0UUtkbjNVbXJzRXhxR2d1T3g2YlppNXVTZ1pUTDZhaTMyS0xnUkI0VzczaXhKVgppdFAxYU8rc0pmMW5Wa3djN3JDZm41Y2JlVVZoU25lZ2hleFF1NDQyTjJPM1U2T1JaL0FWTythTU9WT2NjZVZGCjdqYnExWUFBdHczSEVYL2l3RURJb2VTcTZYYlZ3d2FuS1IyNFIrYnhXZUJ2cGh1RkdldFBQV3ZwL0d5Ukxkd3YKeU9pWVl6V1ZtTkN2OXd5RElVZU54UjV6MmVFWXM5MjFkQT09Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0K
+    rules:
+      - operations: ["CREATE", "UPDATE"]
+        apiGroups: [ "validate.{{ .Values.ccrn.apiGroup }}" ]
+        apiVersions: ["v1"]
+        resources: ["ccrns"]

@@ -1,0 +1,24 @@
+Thank you for installing {{ .Chart.Name }}.
+
+Your Common Cloud Resource Names (CCRN) validation framework has been deployed.
+
+
+The webhook service is available at:
+  https://{{ include "ccrn.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}
+
+To test the CCRN validation, create a CCRN resource like this:
+
+apiVersion: validate.{{ .Values.ccrn.apiGroup }}/v1
+kind: CCRN
+metadata:
+  name: test-container-ccrn
+spec:
+  value: "ccrn: apiVersion=yourResource.yourCCRNGroup.{{ .Values.ccrn.apiGroup }}/v1, name=actualNameOfTheResource"
+
+You can check the status of your CCRN validation with:
+  kubectl get ccrn test-container-ccrn -o jsonpath='{.status}'
+
+To view the webhook logs:
+  kubectl logs -l app.kubernetes.io/name={{ include "ccrn.name" . }}
+
+!! Be aware you need to add CCRN Resources as CRDS to be able to validate them. !!

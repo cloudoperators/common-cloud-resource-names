@@ -1,0 +1,16 @@
+apiVersion: v2
+name: ccrn
+description: Common Cloud Resource Names Framework for Kubernetes
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - ccrn
+  - naming
+  - validation
+home: https://github.com/cloudoperators/ccrn
+maintainers:
+  - name: David Rochow
+    email: david.rochow@sap.com
+  - name: cloudoperators
+    email: cloudoperators@example.com

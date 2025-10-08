@@ -1,0 +1,87 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+    name: users.keystone.openstack.{{ .Values.ccrn.apiGroup }}
+    annotations:
+        ccrn/v1.cadf-template: "urn:openstack:identity:user:<id>"
+        ccrn/v1.urn-template: "urn:ccrn:<ccrn>/<region>/<domain>/<id>"
+        ccrn/v1.url-template: "https://<ccrn>/<region>/<domain>/<id>"
+spec:
+    group: keystone.openstack.{{ .Values.ccrn.apiGroup }}
+    names:
+        kind: user
+        listKind: userList
+        plural: users
+        singular: user
+    scope: Namespaced
+    versions:
+        -   name: v1
+            served: true
+            storage: true
+            schema:
+                openAPIV3Schema:
+                    type: object
+                    description: '''
+                    Example CCRN:
+                        ccrn=user.keystone.openstack, region=eu-de-1, domain=ccadmin, id=123e4567-e89b-12d3-a456-426614174000
+                    URN:
+                        urn:ccrn:user.keystone.openstack/v1/eu-de-1/ccadmin/123e4567-e89b-12d3-a456-426614174000
+                    '''
+                    required: [ "ccrn", "region", "domain", "id" ]
+                    properties:
+                        # Required
+                        ccrn:
+                            type: string
+                            enum: [ "user.keystone.openstack.{{ .Values.ccrn.apiGroup }}/v1" ]
+                        region:
+                            type: string
+                            description: "The OpenStack region the user belongs to (part of CADF 'where')"
+                            enum: [ "eu-de-1", "eu-de-2", "eu-de-3", "*" ]
+                        domain:
+                            type: string
+                            description: "The Keystone domain the user belongs to (part of CADF 'where')"
+                            enum: [ "ccadmin", "monsoon3", "*" ]
+                        name:
+                            type: string
+                            description: "The name of the Keystone user (part of CADF 'who')"
+                            pattern: "^([a-zA-Z0-9.@_-]+|\\*)$"
+                            maxLength: 255
+                        id:
+                            type: string
+                            description: "The UUID of the Keystone user (CADF resource ID)"
+                            pattern: "^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|\\*)$"
+
+                        # Optional
+                        enabled:
+                            type: boolean
+                            description: "Whether the user is enabled or disabled"
+                        defaultProject:
+                            type: string
+                            description: "The default project for the user"
+                            pattern: "^([a-z0-9]([-a-z0-9]*[a-z0-9])?|\\*)$"
+                        email:
+                            type: string
+                            description: "The email address of the user"
+                            pattern: "^([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}|\\*)$"
+                        tags:
+                            type: array
+                            description: "Tags associated with this user (supports CADF classification)"
+                            items:
+                                type: string
+
+            additionalPrinterColumns:
+                -   name: CCRN
+                    type: string
+                    jsonPath: .ccrn
+                -   name: Region
+                    type: string
+                    jsonPath: .region
+                -   name: Domain
+                    type: string
+                    jsonPath: .domain
+                -   name: Id
+                    type: string
+                    jsonPath: .id
+                -   name: Age
+                    type: date
+                    jsonPath: .metadata.creationTimestamp
