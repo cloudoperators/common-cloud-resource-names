@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2025 SAP SE or an SAP affiliate company and Greenhouse contributors
 # SPDX-License-Identifier: Apache-2.0 "common-cloud-resource-names"
-
+version = 1
 SPDX-PackageSupplier = "ospo@sap.com"
 SPDX-PackageName = "common-cloud-resource-names"
 SPDX-PackageDownloadLocation = "https://github.com/cloudoperators/common-cloud-resource-names"
