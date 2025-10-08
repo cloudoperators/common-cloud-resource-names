@@ -132,7 +132,7 @@ func parseURNFields(urn, urnTemplate string) (map[string]string, error) {
 	templateParts := strings.Split(templateBody, "/")
 
 	// The first element is the ccrn type/version so we rebuild the parts accordingly, the last part can be an path with slashes
-	tmpParts := strings.SplitN(body, "/", len(templateParts))
+	tmpParts := strings.SplitN(body, "/", len(templateParts)+1)
 	parts := make([]string, len(tmpParts)-1)
 	parts[0] = tmpParts[0] + "/" + tmpParts[1]
 	for i := 2; i < len(tmpParts); i++ {
@@ -144,6 +144,7 @@ func parseURNFields(urn, urnTemplate string) (map[string]string, error) {
 	if len(parts) < len(templateParts) {
 		return nil, errors.New("URN and template do not match in segment count. Expected format " + urnTemplate + " segments, got: " + urn)
 	}
+
 	fields := make(map[string]string)
 	for i, t := range templateParts {
 		if strings.HasPrefix(t, "<") && strings.HasSuffix(t, ">") {
