@@ -1,0 +1,20 @@
+# SPDX-FileCopyrightText: 2025 SAP SE or an SAP affiliate company and Greenhouse contributors
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: novalidator.tr.ccrn.example.com
+spec:
+  group: tr.ccrn.example.com
+  names:
+    kind: NoValidator
+    plural: novalidators
+    singular: novalidator
+  scope: Namespaced
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      # No schema/openAPIV3Schema here
+

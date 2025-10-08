@@ -1,0 +1,69 @@
+# SPDX-FileCopyrightText: 2025 SAP SE or an SAP affiliate company and Greenhouse contributors
+# SPDX-License-Identifier: Apache-2.0
+
+# Default values for ccrn chart
+ccrn:
+    apiGroup: ccrn.example.com
+    # Fields with explicit versions to maintain backward compatibility
+    commonFields:
+        # V1 fields - original definitions, never change these
+        example:
+        v1:
+            myField:
+            type: string
+            enum: [ "myFieldValue1" ]
+        # V2 fields - if you need to evolve definitions
+        # (hypothetical example, only create when needed)
+        v2:
+            # Only add new versions when you need to change validation patterns
+            # but don't want to break existing CCRNs
+            myField:
+                type: string
+                enum: [ "myFieldValue3", "myFieldValue2" ]
+
+
+replicaCount: 1
+
+image:
+    repository: ccrn-webhook
+    tag: latest
+    pullPolicy: IfNotPresent
+
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+    type: ClusterIP
+    port: 443
+
+resources:
+    limits:
+        cpu: 500m
+        memory: 512Mi
+    requests:
+        cpu: 100m
+        memory: 128Mi
+
+nodeSelector: { }
+
+tolerations: [ ]
+
+affinity: { }
+
+webhook:
+    name: ccrn-webhook
+    path: /validate
+    failurePolicy: Fail  # Changed to Ignore for testing
+    timeoutSeconds: 10
+    useTLS: false  # Disable TLS for testing
+
+rbac:
+    create: true
+
+serviceAccount:
+    create: true
+    name: ""
+
+
+# Debugging settings
+logLevel: info  # Can be debug, info, warn, error
