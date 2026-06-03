@@ -1,0 +1,58 @@
+# SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+    name: servers.rhel-storage.{{ .Values.ccrn.apiGroup }}
+    annotations:
+        ccrn/v1.urn-template: "urn:ccrn:<ccrn>/<region>/<platform>/<hostname>"
+spec:
+    group: rhel-storage.{{ .Values.ccrn.apiGroup }}
+    names:
+        kind: server
+        listKind: serverList
+        plural: servers
+        singular: server
+    scope: Namespaced
+    versions:
+        -   name: v1
+            served: true
+            storage: true
+            schema:
+                openAPIV3Schema:
+                    type: object
+                    required: [ "ccrn", "region", "platform", "hostname" ]
+                    properties:
+                        ccrn:
+                            type: string
+                            enum: [ "server.rhel-storage.{{ .Values.ccrn.apiGroup }}/v1" ]
+                        region:
+                            type: string
+                            description: "Deployment region"
+                            enum: [ "eu-de-1", "*" ]
+                        platform:
+                            type: string
+                            description: "Operating system platform"
+                            enum: [ "rhel", "windows", "*" ]
+                        hostname:
+                            type: string
+                            description: "Server hostname or FQDN"
+                            pattern: "^([a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?|\\*)$"
+                            maxLength: 253
+            additionalPrinterColumns:
+                -   name: CCRN
+                    type: string
+                    jsonPath: .ccrn
+                -   name: Region
+                    type: string
+                    jsonPath: .region
+                -   name: Platform
+                    type: string
+                    jsonPath: .platform
+                -   name: Hostname
+                    type: string
+                    jsonPath: .hostname
+                -   name: Age
+                    type: date
+                    jsonPath: .metadata.creationTimestamp

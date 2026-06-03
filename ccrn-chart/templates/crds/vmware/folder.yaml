@@ -1,0 +1,52 @@
+# SPDX-FileCopyrightText: 2025 SAP SE or an SAP affiliate company and Greenhouse contributors
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+    name: folders.vmware.{{ .Values.ccrn.apiGroup }}
+    annotations:
+        ccrn/v1.urn-template: "urn:ccrn:<ccrn>/<instance>/<path>"
+spec:
+    group: vmware.{{ .Values.ccrn.apiGroup }}
+    names:
+        kind: folder
+        listKind: folderList
+        plural: folders
+        singular: folder
+    scope: Namespaced
+    versions:
+        -   name: v1
+            served: true
+            storage: true
+            schema:
+                openAPIV3Schema:
+                    type: object
+                    required: [ "ccrn", "instance", "path" ]
+                    properties:
+                        ccrn:
+                            type: string
+                            enum: [ "folder.vmware.{{ .Values.ccrn.apiGroup }}/v1" ]
+                        instance:
+                            type: string
+                            description: "vCenter Server instance FQDN"
+                            pattern: "^([a-z0-9]([a-z0-9.-]*[a-z0-9])?|\\*)$"
+                            maxLength: 253
+                        path:
+                            type: string
+                            description: "Folder path (e.g. datacenter/vm/folder-name)"
+                            pattern: "^([a-zA-Z0-9/]([a-zA-Z0-9._/-]*[a-zA-Z0-9])?|\\*)$"
+                            maxLength: 512
+            additionalPrinterColumns:
+                -   name: CCRN
+                    type: string
+                    jsonPath: .ccrn
+                -   name: Instance
+                    type: string
+                    jsonPath: .instance
+                -   name: Path
+                    type: string
+                    jsonPath: .path
+                -   name: Age
+                    type: date
+                    jsonPath: .metadata.creationTimestamp

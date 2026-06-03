@@ -1,0 +1,43 @@
+# SPDX-FileCopyrightText: 2025 SAP SE or an SAP affiliate company and Greenhouse contributors
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+    name: instances.ise.{{ .Values.ccrn.apiGroup }}
+    annotations:
+        ccrn/v1.urn-template: "urn:ccrn:<ccrn>/<fqdn>"
+spec:
+    group: ise.{{ .Values.ccrn.apiGroup }}
+    names:
+        kind: instance
+        listKind: instanceList
+        plural: instances
+        singular: instance
+    scope: Namespaced
+    versions:
+        -   name: v1
+            served: true
+            storage: true
+            schema:
+                openAPIV3Schema:
+                    type: object
+                    required: [ "ccrn", "fqdn" ]
+                    properties:
+                        ccrn:
+                            type: string
+                            enum: [ "instance.ise.{{ .Values.ccrn.apiGroup }}/v1" ]
+                        fqdn:
+                            type: string
+                            description: "Cisco ISE node FQDN"
+                            pattern: "^([a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*|\\*(\\.([a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?))*|\\*)$"
+            additionalPrinterColumns:
+                -   name: CCRN
+                    type: string
+                    jsonPath: .ccrn
+                -   name: FQDN
+                    type: string
+                    jsonPath: .fqdn
+                -   name: Age
+                    type: date
+                    jsonPath: .metadata.creationTimestamp

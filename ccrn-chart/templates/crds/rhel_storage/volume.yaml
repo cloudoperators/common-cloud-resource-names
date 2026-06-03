@@ -1,0 +1,59 @@
+# SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+    name: volumes.rhel-storage.{{ .Values.ccrn.apiGroup }}
+    annotations:
+        ccrn/v1.urn-template: "urn:ccrn:<ccrn>/<region>/<server>/<name>"
+spec:
+    group: rhel-storage.{{ .Values.ccrn.apiGroup }}
+    names:
+        kind: volume
+        listKind: volumeList
+        plural: volumes
+        singular: volume
+    scope: Namespaced
+    versions:
+        -   name: v1
+            served: true
+            storage: true
+            schema:
+                openAPIV3Schema:
+                    type: object
+                    required: [ "ccrn", "region", "server", "name" ]
+                    properties:
+                        ccrn:
+                            type: string
+                            enum: [ "volume.rhel-storage.{{ .Values.ccrn.apiGroup }}/v1" ]
+                        region:
+                            type: string
+                            description: "Deployment region"
+                            enum: [ "eu-de-1", "*" ]
+                        server:
+                            type: string
+                            description: "Parent server hostname"
+                            pattern: "^([a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?|\\*)$"
+                            maxLength: 253
+                        name:
+                            type: string
+                            description: "Volume or filesystem name"
+                            pattern: "^([a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?|\\*)$"
+                            maxLength: 253
+            additionalPrinterColumns:
+                -   name: CCRN
+                    type: string
+                    jsonPath: .ccrn
+                -   name: Region
+                    type: string
+                    jsonPath: .region
+                -   name: Server
+                    type: string
+                    jsonPath: .server
+                -   name: Name
+                    type: string
+                    jsonPath: .name
+                -   name: Age
+                    type: date
+                    jsonPath: .metadata.creationTimestamp
