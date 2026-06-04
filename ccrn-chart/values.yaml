@@ -3,7 +3,7 @@
 
 # Default values for ccrn chart
 ccrn:
-    apiGroup: ccrn.example.com
+    apiGroup: ccrn.cloudoperators.dev
     # Fields with explicit versions to maintain backward compatibility
     commonFields:
         # V1 fields - original definitions, never change these
