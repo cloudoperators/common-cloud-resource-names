@@ -9,18 +9,20 @@ metadata:
   labels:
     {{- include "ccrn.labels" . | nindent 4 }}
 rules:
+  # CCRN custom resource (validate group)
   - apiGroups: ["validate.{{ .Values.ccrn.apiGroup }}"]
     resources: ["ccrns", "ccrns/status"]
     verbs: ["get", "list", "watch", "create", "update", "patch"]
-  - apiGroups: ["keystone.openstack.{{ .Values.ccrn.apiGroup }}"]
+  # Target resource groups (dry-run create for validation)
+  - apiGroups:
+      - "vmware.{{ .Values.ccrn.apiGroup }}"
+      - "opensearch.{{ .Values.ccrn.apiGroup }}"
+      - "ise.{{ .Values.ccrn.apiGroup }}"
+      - "keystone.openstack.{{ .Values.ccrn.apiGroup }}"
+      - "rhel-storage.{{ .Values.ccrn.apiGroup }}"
     resources: ["*"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  - apiGroups: ["vault.{{ .Values.ccrn.apiGroup }}"]
-    resources: ["*"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  - apiGroups: ["*.{{ .Values.ccrn.apiGroup }}"]
-    resources: ["*"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  # CRD access for schema discovery
   - apiGroups: ["apiextensions.k8s.io"]
     resources: ["customresourcedefinitions"]
     verbs: ["get", "list", "watch"]

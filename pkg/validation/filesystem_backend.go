@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2025 SAP SE or an SAP affiliate company and Greenhouse contributors
 // SPDX-License-Identifier: Apache-2.0
 
-// SPDX-FileCopyrightText: SAP SE or an SAP affiliate company
-// SPDX-License-Identifier: Apache-2.0
 package validation
 
 import (
@@ -148,33 +146,48 @@ func (fb *FilesystemBackend) LoadCRDs(pattern string) error {
 func (fb *FilesystemBackend) LoadCRDsFromDirectory(dir string) error {
     fb.log.Infof("Loading CRDs from directory: %s", dir)
 
-    // Search patterns for both recursive and non-recursive
-    patterns := []string{
-        filepath.Join(dir, "*.yaml"),
-        filepath.Join(dir, "*.yml"),
-        filepath.Join(dir, "**", "*.yaml"),
-        filepath.Join(dir, "**", "*.yml"),
-    }
-
-    var allErrors []error
-    totalLoaded := 0
-
-    // Try each pattern and accumulate results
-    for _, pattern := range patterns {
-        if err := fb.LoadCRDs(pattern); err != nil {
-            allErrors = append(allErrors, fmt.Errorf("pattern %s: %w", pattern, err))
-        } else {
-            // Count how many CRDs we have now to track progress
-            fb.crdsMutex.RLock()
-            currentCount := len(fb.crds)
-            fb.crdsMutex.RUnlock()
-            totalLoaded = currentCount
+    // Walk the directory tree to find all YAML files
+    var yamlFiles []string
+    err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+        if err != nil {
+            return err
         }
+        if !d.IsDir() && fb.isYAMLFile(path) {
+            yamlFiles = append(yamlFiles, path)
+        }
+        return nil
+    })
+    if err != nil {
+        return fmt.Errorf("failed to walk directory %s: %w", dir, err)
     }
 
-    // If no CRDs were loaded from any pattern, return combined errors
-    if totalLoaded == 0 && len(allErrors) > 0 {
-        return fmt.Errorf("failed to load CRDs from directory %s: %w", dir, errors.Join(allErrors...))
+    if len(yamlFiles) == 0 {
+        return fmt.Errorf("failed to load CRDs from directory %s: no YAML files found", dir)
+    }
+
+    // Process all found YAML files
+    result := &CRDLoadingResult{
+        Errors:        make([]error, 0),
+        LoadedCRDKeys: make([]string, 0),
+    }
+
+    for _, filePath := range yamlFiles {
+        fb.processFile(filePath, result)
+    }
+
+    // Store the directory for potential refresh operations
+    fb.loadedPaths = append(fb.loadedPaths, dir)
+
+    // Log comprehensive results
+    fb.logLoadingResults(result)
+
+    // Return error only if no CRDs were loaded at all
+    if result.ProcessedCRDs == 0 && len(result.Errors) > 0 {
+        return fmt.Errorf("failed to load CRDs from directory %s: %w", dir, errors.Join(result.Errors...))
+    }
+
+    if len(result.Errors) > 0 {
+        fb.log.Warnf("Some errors occurred during CRD loading from directory, but %d CRDs loaded successfully", result.ProcessedCRDs)
     }
 
     return nil
@@ -650,10 +663,18 @@ func (fb *FilesystemBackend) Refresh() error {
     fb.crdsMutex.Unlock()
 
     // Reload from all previously loaded paths
+    // Paths may be glob patterns (from LoadCRDs) or directories (from LoadCRDsFromDirectory)
     var allErrors []error
     for _, path := range fb.loadedPaths {
-        if err := fb.LoadCRDs(path); err != nil {
-            allErrors = append(allErrors, fmt.Errorf("failed to refresh path %s: %w", path, err))
+        info, statErr := os.Stat(path)
+        if statErr == nil && info.IsDir() {
+            if err := fb.LoadCRDsFromDirectory(path); err != nil {
+                allErrors = append(allErrors, fmt.Errorf("failed to refresh directory %s: %w", path, err))
+            }
+        } else {
+            if err := fb.LoadCRDs(path); err != nil {
+                allErrors = append(allErrors, fmt.Errorf("failed to refresh path %s: %w", path, err))
+            }
         }
     }
 

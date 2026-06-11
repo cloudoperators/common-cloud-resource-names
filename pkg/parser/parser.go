@@ -1,23 +1,25 @@
 // SPDX-FileCopyrightText: 2025 SAP SE or an SAP affiliate company and Greenhouse contributors
 // SPDX-License-Identifier: Apache-2.0
 
-// SPDX-FileCopyrightText: SAP SE or an SAP affiliate company
-// SPDX-License-Identifier: Apache-2.0
 package parser
 
 import (
 	"errors"
 	"fmt"
-	"github.com/cloudoperators/common-cloud-resource-names/pkg/apis"
+	"io"
 	"strings"
 
+	"github.com/cloudoperators/common-cloud-resource-names/pkg/apis"
+	"github.com/cloudoperators/common-cloud-resource-names/pkg/ccrn"
+	"github.com/cloudoperators/common-cloud-resource-names/pkg/parser/lite"
 	"github.com/sirupsen/logrus"
 )
 
-const DEFAULT_URN_TEMPLATE string = "urn:ccrn:<ccrn>"
+const DefaultURNTemplate string = "urn:ccrn:<ccrn>"
 
-// ResourceParser parses both CCRN and URN formats and converts between them, without backend dependencies
-// It requires a URN template to parse a URN.
+// ResourceParser parses both CCRN and URN formats and converts between them.
+// It delegates string parsing to pkg/parser/lite and adds URN template lookup
+// from the ValidationBackend.
 type ResourceParser struct {
 	log     *logrus.Logger
 	backend apis.ValidationBackend
@@ -25,37 +27,44 @@ type ResourceParser struct {
 
 // NewResourceParser creates a new resource parser
 func NewResourceParser(log *logrus.Logger, backend apis.ValidationBackend) *ResourceParser {
+	if log == nil {
+		log = logrus.New()
+		log.SetOutput(io.Discard)
+	}
 	return &ResourceParser{log: log, backend: backend}
 }
 
 // Parse parses a CCRN or URN string. For URN, a template must be provided.
+// If the template is empty or the default placeholder, the backend is consulted
+// to look up the real template.
 func (p *ResourceParser) Parse(input string, urnTemplate string) (*apis.ParsedResource, error) {
 	if strings.HasPrefix(input, "ccrn=") {
-		parsed, err := parseCCRNFields(input)
+		parsed, err := lite.ParseCCRN(input)
 		if err != nil {
 			return nil, err
 		}
-		return &apis.ParsedResource{
-			Format: "CCRN",
-			Fields: parsed,
-			Raw:    input,
-		}, nil
+		return liteToAPIs(parsed), nil
 	} else if strings.HasPrefix(input, "urn:ccrn:") {
-		if urnTemplate == "" || urnTemplate == DEFAULT_URN_TEMPLATE {
-
-			parsed, err := parseURNCCRNField(input)
-
+		if urnTemplate == "" || urnTemplate == DefaultURNTemplate {
+			// Need a backend to look up the URN template
+			if p.backend == nil {
+				return nil, errors.New("cannot parse URN without a template: no backend configured for template lookup")
+			}
+			// Extract the CCRN key to look up the real template from the backend
+			ccrnKey, err := extractCCRNKeyFromURN(input)
 			if err != nil {
 				return nil, err
 			}
 
-			parsedResource := &apis.ParsedResource{
-				Format: "URN",
-				Fields: map[string]string{"ccrn": parsed},
-				Raw:    input,
+			// Split ccrnKey into name and version for the backend lookup
+			parts := strings.SplitN(ccrnKey, "/", 2)
+			if len(parts) < 2 {
+				return nil, errors.New("invalid URN format: CCRN key must contain type and version separated by /")
 			}
+			ccrnName := parts[0]
+			ccrnVersion := parts[1]
 
-			template, err := p.backend.GetURNTemplate(parsedResource.CCRNName(), parsedResource.Version())
+			template, err := p.backend.GetURNTemplate(ccrnName, ccrnVersion)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get URN template: %w", err)
 			}
@@ -65,52 +74,31 @@ func (p *ResourceParser) Parse(input string, urnTemplate string) (*apis.ParsedRe
 		if !strings.HasPrefix(urnTemplate, "urn:ccrn:") {
 			return nil, errors.New("invalid URN template: must start with 'urn:ccrn:'")
 		}
-		parsed, err := parseURNFields(input, urnTemplate)
+
+		// Convert the backend template format (urn:ccrn:<ccrn>/<field1>/<field2>)
+		// to the lite parser template format (/{field1}/{field2})
+		liteTemplate := convertToLiteTemplate(urnTemplate)
+
+		parsed, err := lite.ParseURN(input, liteTemplate)
 		if err != nil {
 			return nil, err
 		}
-		return &apis.ParsedResource{
-			Format: "URN",
-			Fields: parsed,
-			Raw:    input,
-		}, nil
+		return liteToAPIs(parsed), nil
 	}
 	return nil, errors.New("unknown format: must start with 'ccrn=' or 'urn:ccrn:'")
 }
 
-// parseCCRNFields parses a CCRN string into fields
-func parseCCRNFields(ccrn string) (map[string]string, error) {
-	if !strings.HasPrefix(ccrn, "ccrn=") {
-		return nil, errors.New("invalid CCRN format: must start with 'ccrn='")
-	}
-	fieldsPart := strings.TrimSpace(ccrn)
-	fields := make(map[string]string)
-	fieldEntries := strings.Split(fieldsPart, ",")
-	for _, entry := range fieldEntries {
-		entry = strings.TrimSpace(entry)
-		if entry == "" {
-			continue
-		}
-		parts := strings.SplitN(entry, "=", 2)
-		if len(parts) != 2 {
-			return nil, errors.New("invalid field format: " + entry + " (must be key=value)")
-		}
-		key := strings.TrimSpace(parts[0])
-		value := strings.TrimSpace(parts[1])
-		if len(value) >= 2 && value[0] == '"' && value[len(value)-1] == '"' {
-			value = value[1 : len(value)-1]
-		}
-		fields[key] = value
-	}
-	if _, exists := fields["ccrn"]; !exists {
-		return nil, errors.New("missing required field: ccrn")
-	}
-	return fields, nil
+// ExtractCCRNKeyFromURN extracts the CCRN key from a URN string.
+func (p *ResourceParser) ExtractCCRNKeyFromURN(urn string) (string, error) {
+	return extractCCRNKeyFromURN(urn)
 }
 
-func parseURNCCRNField(urn string) (string, error) {
-	// Remove prefix
+// extractCCRNKeyFromURN extracts the CCRN key (type/version) from a URN string.
+func extractCCRNKeyFromURN(urn string) (string, error) {
 	body := strings.TrimPrefix(urn, "urn:ccrn:")
+	if body == "" {
+		return "", errors.New("invalid URN format: empty body after 'urn:ccrn:' prefix")
+	}
 	parts := strings.Split(body, "/")
 	if len(parts) < 3 {
 		return "", errors.New("invalid URN format: must contain at least three segments after 'urn:ccrn:'")
@@ -118,55 +106,56 @@ func parseURNCCRNField(urn string) (string, error) {
 	return parts[0] + "/" + parts[1], nil
 }
 
-// parseURNFields parses a URN string into fields using the provided template
-func parseURNFields(urn, urnTemplate string) (map[string]string, error) {
-	if !strings.HasPrefix(urn, "urn:ccrn:") {
-		return nil, errors.New("invalid URN format: must start with 'urn:ccrn:'")
-	}
-	if !strings.HasPrefix(urnTemplate, "urn:ccrn:") {
-		return nil, errors.New("invalid URN template: must start with 'urn:ccrn:'")
-	}
-	// Remove prefix
-	body := strings.TrimPrefix(urn, "urn:ccrn:")
-	templateBody := strings.TrimPrefix(urnTemplate, "urn:ccrn:")
-	templateParts := strings.Split(templateBody, "/")
+// convertToLiteTemplate converts a backend URN template
+// (e.g., "urn:ccrn:<ccrn>/<cluster>/<namespace>/<name>")
+// to the lite parser template format (e.g., "/{cluster}/{namespace}/{name}").
+// The <ccrn> placeholder occupies one segment in the template string, even though
+// it expands to "type.group/version" (two slash-separated parts) at runtime.
+func convertToLiteTemplate(backendTemplate string) string {
+	// Strip the urn:ccrn: prefix
+	body := strings.TrimPrefix(backendTemplate, "urn:ccrn:")
 
-	// The first element is the ccrn type/version so we rebuild the parts accordingly, the last part can be an path with slashes
-	tmpParts := strings.SplitN(body, "/", len(templateParts)+1)
-	parts := make([]string, len(tmpParts)-1)
-	parts[0] = tmpParts[0] + "/" + tmpParts[1]
-	for i := 2; i < len(tmpParts); i++ {
-		if tmpParts[i] != "" {
-			parts[i-1] = tmpParts[i]
+	// Split by /
+	segments := strings.Split(body, "/")
+
+	// Skip the first segment which is the <ccrn> placeholder
+	var fieldSegments []string
+	if len(segments) > 1 {
+		fieldSegments = segments[1:]
+	} else {
+		return ""
+	}
+
+	// Convert <field> to {field}
+	var result strings.Builder
+	for _, seg := range fieldSegments {
+		if seg == "" {
+			continue
+		}
+		result.WriteString("/")
+		if strings.HasPrefix(seg, "<") && strings.HasSuffix(seg, ">") {
+			fieldName := seg[1 : len(seg)-1]
+			result.WriteString("{")
+			result.WriteString(fieldName)
+			result.WriteString("}")
+		} else {
+			result.WriteString(seg)
 		}
 	}
-
-	if len(parts) < len(templateParts) {
-		return nil, errors.New("URN and template do not match in segment count. Expected format " + urnTemplate + " segments, got: " + urn)
-	}
-
-	fields := make(map[string]string)
-	for i, t := range templateParts {
-		if strings.HasPrefix(t, "<") && strings.HasSuffix(t, ">") {
-			key := t[1 : len(t)-1]
-			fields[key] = parts[i]
-		} else if t == "<ccrn>" {
-			fields["ccrn"] = parts[i]
-		} else if t != parts[i] {
-			return nil, fmt.Errorf("URN segment '%s' does not match template '%s'", parts[i], t)
-		}
-	}
-	if _, exists := fields["ccrn"]; !exists {
-		return nil, errors.New("missing required field: ccrn")
-	}
-	return fields, nil
+	return result.String()
 }
 
-// ExtractCCRNKeyFromURN extracts the CCRN key from a URN using the template
-func (p *ResourceParser) ExtractCCRNKeyFromURN(urn string) (string, error) {
-	ccrn, err := parseURNCCRNField(urn)
-	if err != nil {
-		return "", err
+// liteToAPIs converts a ccrn.ParsedResource from the lite parser into an apis.ParsedResource.
+// The CCRNKey is stored in the fields map under the "ccrn" key for backward compatibility.
+func liteToAPIs(parsed *ccrn.ParsedResource) *apis.ParsedResource {
+	fields := make(map[string]string, len(parsed.Fields)+1)
+	fields["ccrn"] = parsed.CCRNKey
+	for k, v := range parsed.Fields {
+		fields[k] = v
 	}
-	return ccrn, nil
+	return &apis.ParsedResource{
+		Format: parsed.Format,
+		Fields: fields,
+		Raw:    parsed.RawInput,
+	}
 }
