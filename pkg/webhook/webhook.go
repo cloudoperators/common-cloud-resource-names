@@ -1,17 +1,17 @@
 // SPDX-FileCopyrightText: 2025 SAP SE or an SAP affiliate company and Greenhouse contributors
 // SPDX-License-Identifier: Apache-2.0
 
-// SPDX-FileCopyrightText: SAP SE or an SAP affiliate company
-// SPDX-License-Identifier: Apache-2.0
-
 package webhook
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -27,19 +27,34 @@ import (
 
 // WebhookServer implements the admission webhook for CCRN validation
 type WebhookServer struct {
-	log       *logrus.Logger
-	validator *validation.CCRNValidator
-	backend   apis.ValidationBackend
-	parser    *parser.ResourceParser
+	log        *logrus.Logger
+	validator  *validation.CCRNValidator
+	backend    apis.ValidationBackend
+	parser     *parser.ResourceParser
+	httpServer *http.Server
+	ready      atomic.Bool
 }
 
 // NewWebhookServer creates a new webhook server using the provided validation backend
 func NewWebhookServer(log *logrus.Logger, backend apis.ValidationBackend) (*WebhookServer, error) {
+	if log == nil {
+		log = logrus.New()
+		log.SetOutput(io.Discard)
+	}
+
 	server := &WebhookServer{
 		log:       log,
 		validator: validation.NewCCRNValidator(backend),
 		backend:   backend,
 		parser:    parser.NewResourceParser(log, backend),
+	}
+
+	// Initialize the HTTP mux and server
+	mux := http.NewServeMux()
+	mux.HandleFunc("/validate", server.mutateCCRN)
+	mux.HandleFunc("/healthz", server.healthz)
+	server.httpServer = &http.Server{
+		Handler: mux,
 	}
 
 	return server, nil
@@ -65,20 +80,36 @@ func NewWebhookServerFromConfig(log *logrus.Logger, ccrnGroup string) (*WebhookS
 	return NewWebhookServer(log, backend)
 }
 
-// Serve starts the webhook server
+// Serve starts the webhook server with TLS
 func (s *WebhookServer) Serve(port int, certFile, keyFile string) error {
-	// Setup the HTTP server
-	mux := http.NewServeMux()
-	mux.HandleFunc("/validate", s.mutateCCRN)
-	mux.HandleFunc("/healthz", s.healthz)
-
-	server := &http.Server{
-		Addr:    fmt.Sprintf(":%d", port),
-		Handler: mux,
-	}
-
+	s.httpServer.Addr = fmt.Sprintf(":%d", port)
 	s.log.Infof("Starting webhook server on port %d", port)
-	return server.ListenAndServeTLS(certFile, keyFile)
+	return s.httpServer.ListenAndServeTLS(certFile, keyFile)
+}
+
+// ServeHTTP starts the webhook server without TLS (for testing).
+// It accepts a net.Listener so callers can bind to port 0 for ephemeral ports.
+func (s *WebhookServer) ServeHTTP(ln net.Listener) error {
+	s.log.Infof("Starting webhook server (HTTP) on %s", ln.Addr())
+	return s.httpServer.Serve(ln)
+}
+
+// Shutdown gracefully shuts down the webhook server, allowing in-flight requests to complete.
+func (s *WebhookServer) Shutdown(ctx context.Context) error {
+	if s.httpServer == nil {
+		return nil
+	}
+	return s.httpServer.Shutdown(ctx)
+}
+
+// SetReady marks the server as ready to serve traffic
+func (s *WebhookServer) SetReady() {
+	s.ready.Store(true)
+}
+
+// IsReady returns whether the server is ready to serve traffic
+func (s *WebhookServer) IsReady() bool {
+	return s.ready.Load()
 }
 
 // mutateCCRN is the HTTP handler for webhook mutation requests
@@ -160,7 +191,7 @@ func (s *WebhookServer) handleCombinedRequest(request *admissionv1.AdmissionRequ
 		Allowed: true,
 		Result: &metav1.Status{
 			Status:  "Success",
-			Message: "CCRN is valid and target resource created",
+			Message: "CCRN is valid and target resource validated",
 		},
 	}
 
@@ -172,7 +203,7 @@ func (s *WebhookServer) handleCombinedRequest(request *admissionv1.AdmissionRequ
 			pt := admissionv1.PatchTypeJSONPatch
 			response.Patch = patchBytes
 			response.PatchType = &pt
-			response.Result.Message = "CCRN is valid, missing format added, and target resource created"
+			response.Result.Message = "CCRN is valid, missing format added, and target resource validated"
 		}
 	}
 
@@ -302,7 +333,7 @@ func (s *WebhookServer) generateMutationPatches(ccrn *apis.CCRN, parsedCCRN *api
 		s.log.Infof("CCRN is present, generating URN from CCRN")
 		template, err := s.backend.GetURNTemplate(parsedCCRN.CCRNName(), parsedCCRN.Version())
 		if err != nil {
-			s.log.Errorf("Failed to get URN template for %s/%s: %v", parsedCCRN.ApiGroup(), parsedCCRN.Version(), err)
+			s.log.Errorf("Failed to get URN template for %s/%s: %v", parsedCCRN.APIGroup(), parsedCCRN.Version(), err)
 			return nil, false
 		}
 		urn := parsedCCRN.URN(template)
@@ -321,7 +352,7 @@ func (s *WebhookServer) generateMutationPatches(ccrn *apis.CCRN, parsedCCRN *api
 	} else if ccrn.Spec.URN != "" && ccrn.Spec.CCRN == "" {
 		s.log.Infof("URN is present, generating CCRN from URN")
 		// Validate URN and derive CCRN
-		parsedURN, err := s.parser.Parse(ccrn.Spec.URN, parser.DEFAULT_URN_TEMPLATE) // Use default template to get the ccrn field
+		parsedURN, err := s.parser.Parse(ccrn.Spec.URN, parser.DefaultURNTemplate) // Use default template to get the ccrn field
 		if err != nil {
 			s.log.Errorf("Failed to parse URN using default template: %v", err)
 			return nil, false
@@ -339,8 +370,16 @@ func (s *WebhookServer) generateMutationPatches(ccrn *apis.CCRN, parsedCCRN *api
 	return patches, len(patches) > 0
 }
 
-// healthz is the health check endpoint
+// healthz is the health check endpoint. Returns 503 if the server is not ready,
+// 200 otherwise.
 func (s *WebhookServer) healthz(w http.ResponseWriter, r *http.Request) {
+	if !s.ready.Load() {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		if _, err := w.Write([]byte("not ready")); err != nil {
+			s.log.Errorf("Failed to write response: %v", err)
+		}
+		return
+	}
 	w.WriteHeader(http.StatusOK)
 	if _, err := w.Write([]byte("ok")); err != nil {
 		s.log.Errorf("Failed to write response: %v", err)

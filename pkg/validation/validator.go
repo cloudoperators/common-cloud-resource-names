@@ -1,13 +1,11 @@
 // SPDX-FileCopyrightText: 2025 SAP SE or an SAP affiliate company and Greenhouse contributors
 // SPDX-License-Identifier: Apache-2.0
 
-// SPDX-FileCopyrightText: SAP SE or an SAP affiliate company
-// SPDX-License-Identifier: Apache-2.0
-
 package validation
 
-import "C"
 import (
+	"fmt"
+
 	"github.com/cloudoperators/common-cloud-resource-names/pkg/apis"
 	"github.com/cloudoperators/common-cloud-resource-names/pkg/parser"
 )
@@ -28,7 +26,7 @@ func NewCCRNValidator(backend apis.ValidationBackend) *CCRNValidator {
 
 // ValidateCCRN validates a CCRN string
 func (v *CCRNValidator) ValidateCCRN(ccrnStr string) (*apis.ValidationResult, error) {
-	parsed, err := v.parser.Parse(ccrnStr, parser.DEFAULT_URN_TEMPLATE)
+	parsed, err := v.parser.Parse(ccrnStr, parser.DefaultURNTemplate)
 	if err != nil {
 		return &apis.ValidationResult{
 			Valid:  false,
@@ -42,7 +40,7 @@ func (v *CCRNValidator) ValidateCCRN(ccrnStr string) (*apis.ValidationResult, er
 			return &apis.ValidationResult{
 				Valid:      false,
 				ParsedCCRN: parsed,
-				Errors:     []string{"A CCRN definition for %s could not be retrieved: %s", parsed.CCRNKey(), err.Error()},
+				Errors:     []string{fmt.Sprintf("A CCRN definition for %s could not be retrieved: %s", parsed.CCRNKey(), err.Error())},
 			}, err
 		}
 		parsed, err = v.parser.Parse(ccrnStr, info.URNFormat)

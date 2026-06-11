@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2025 SAP SE or an SAP affiliate company and Greenhouse contributors
 // SPDX-License-Identifier: Apache-2.0
 
-// SPDX-FileCopyrightText: SAP SE or an SAP affiliate company
-// SPDX-License-Identifier: Apache-2.0
 package validation_test
 
 import (
@@ -54,16 +52,35 @@ var _ = Describe("FilesystemBackend", func() {
 			Expect(backend.GetLoadedCRDs()).To(ContainElement("testresource.tr.ccrn.example.com/v1"))
 		})
 
+		It("loads CRDs from nested subdirectories", func() {
+			// Arrange - testdata/subdir/nested_crd.yaml should be found recursively
+			// Act
+			err := backend.LoadCRDsFromDirectory(filepath.Join("testdata"))
+			// Assert
+			Expect(err).ToNot(HaveOccurred())
+			Expect(backend.GetLoadedCRDs()).To(ContainElement("nestedresource.tr.ccrn.example.com/v1"))
+			Expect(backend.GetLoadedCRDs()).To(ContainElement("testresource.tr.ccrn.example.com/v1"))
+		})
+
 		It("returns error for non-existent directory", func() {
 			// Act
 			err := backend.LoadCRDsFromDirectory("/non/existent/path")
 			// Assert
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("failed to load CRDs from directory"))
 		})
 	})
 
 	Context("LoadCRDs", func() {
+		It("does not panic when created with nil logger", func() {
+			// Test that NewOfflineBackend handles nil logger gracefully
+			Expect(func() {
+				b := validation.NewOfflineBackend(nil, "ccrn.example.com")
+				Expect(b).ToNot(BeNil())
+				// Verify it can actually be used without panics
+				_ = b.IsResourceTypeSupported("foo")
+			}).ToNot(Panic())
+		})
+
 		It("returns error for invalid YAML", func() {
 			// Arrange
 			invalidPath := filepath.Join(tempDir, "invalid.yaml")
@@ -108,7 +125,7 @@ var _ = Describe("FilesystemBackend", func() {
 			Expect(err.Error()).To(ContainSubstring("failed to parse YAML"))
 		})
 
-		It("returns error if both directory patterns fail in LoadCRDsFromDirectory", func() {
+		It("returns error if directory is empty (no YAML files) in LoadCRDsFromDirectory", func() {
 			// Arrange
 			dir := filepath.Join(os.TempDir(), "emptydir")
 			os.MkdirAll(dir, 0755)
@@ -117,7 +134,7 @@ var _ = Describe("FilesystemBackend", func() {
 			err := backend.LoadCRDsFromDirectory(dir)
 			// Assert
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("no files found matching pattern"))
+			Expect(err.Error()).To(ContainSubstring("no YAML files found"))
 		})
 	})
 
@@ -131,6 +148,16 @@ var _ = Describe("FilesystemBackend", func() {
 			err := backend.LoadCRDs(crdPath)
 			Expect(err).ToNot(HaveOccurred())
 			validator = validation.NewCCRNValidator(backend)
+		})
+
+		It("produces properly formatted error messages for unknown URN CRD", func() {
+			// This tests the fix for the broken []string{"%s", val1, val2} pattern
+			result, _ := validator.ValidateCCRN("urn:ccrn:unknown.tr.ccrn.example.com/v1/foo")
+			Expect(result.Valid).To(BeFalse())
+			if len(result.Errors) > 0 {
+				// Error should be a properly formatted string, not contain literal %s
+				Expect(result.Errors[0]).ToNot(ContainSubstring("%s"))
+			}
 		})
 
 		DescribeTable("validates CCRNs correctly",

@@ -4,7 +4,7 @@
 package apis
 
 import (
-	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -13,7 +13,7 @@ type ParsedResource struct {
 	Format      string // "CCRN" or "URN"
 	Fields      map[string]string
 	Raw         string
-	UrnTemplate string // URN template used for parsing, if applicable
+	URNTemplate string // URN template used for parsing, if applicable
 }
 
 // CCRN returns the full CCRN string from the parsed resource
@@ -22,20 +22,33 @@ func (p *ParsedResource) CCRN() string {
 	if !exists {
 		return ""
 	}
-	ccrn := "ccrn=" + ccrnString
-	for key, value := range p.Fields {
+
+	// Collect non-ccrn keys and sort them for deterministic output
+	keys := make([]string, 0, len(p.Fields)-1)
+	for key := range p.Fields {
 		if key != "ccrn" {
-			ccrn += fmt.Sprintf(", %s=%s", key, value)
+			keys = append(keys, key)
 		}
 	}
-	return ccrn
+	sort.Strings(keys)
+
+	var b strings.Builder
+	b.WriteString("ccrn=")
+	b.WriteString(ccrnString)
+	for _, key := range keys {
+		b.WriteString(", ")
+		b.WriteString(key)
+		b.WriteString("=")
+		b.WriteString(p.Fields[key])
+	}
+	return b.String()
 }
 
 // URN returns the URN string from the parsed resource using the provided template
 func (p *ParsedResource) URN(template string) string {
 	if template == "" {
-		if p.UrnTemplate != "" {
-			template = p.UrnTemplate
+		if p.URNTemplate != "" {
+			template = p.URNTemplate
 		} else {
 			return ""
 		}
@@ -77,8 +90,8 @@ func (p *ParsedResource) GetKind() string {
 	return ""
 }
 
-// ApiGroup returns the group from the parsed CCRN or URN
-func (p *ParsedResource) ApiGroup() string {
+// APIGroup returns the group from the parsed CCRN or URN
+func (p *ParsedResource) APIGroup() string {
 	if ccrn, ok := p.Fields["ccrn"]; ok {
 		resourceParts := strings.SplitN(strings.SplitN(ccrn, "/", 2)[0], ".", 2)
 		if len(resourceParts) < 2 {
@@ -89,7 +102,7 @@ func (p *ParsedResource) ApiGroup() string {
 	return ""
 }
 
-// ApiGroup returns the group from the parsed CCRN or URN
+// CCRNName returns the name from the parsed CCRN or URN
 func (p *ParsedResource) CCRNName() string {
 	if ccrn, ok := p.Fields["ccrn"]; ok {
 		name := strings.SplitN(ccrn, "/", 2)[0]

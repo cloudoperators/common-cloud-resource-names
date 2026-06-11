@@ -29,7 +29,7 @@ spec:
               properties:
                 ccrn:
                   type: string
-                  pattern: "^ccrn: .+"
+                  pattern: "^ccrn=.+"
                 urn:
                   type: string
                   pattern: "^urn:ccrn:.+"

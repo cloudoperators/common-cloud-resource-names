@@ -1,16 +1,15 @@
 // SPDX-FileCopyrightText: 2025 SAP SE or an SAP affiliate company and Greenhouse contributors
 // SPDX-License-Identifier: Apache-2.0
 
-// SPDX-FileCopyrightText: SAP SE or an SAP affiliate company
-// SPDX-License-Identifier: Apache-2.0
-
 package main
 
 import (
+	"context"
 	"flag"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/sirupsen/logrus"
 
@@ -55,12 +54,17 @@ func main() {
 		log.Fatalf("Failed to create webhook server: %v", err)
 	}
 
+	// Mark server as ready — NewWebhookServerFromConfig performs the initial
+	// backend.Refresh() which populates the CRD cache. If it failed critically,
+	// NewWebhookServerFromConfig would have returned an error above.
+	server.SetReady()
+
 	// Set up signal handling for graceful shutdown
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 
 	// Start the webhook server in a goroutine
-	errCh := make(chan error)
+	errCh := make(chan error, 1)
 	go func() {
 		errCh <- server.Serve(port, certFile, keyFile)
 	}()
@@ -69,7 +73,18 @@ func main() {
 	select {
 	case err := <-errCh:
 		log.Fatalf("Webhook server failed: %v", err)
-	case <-stop:
-		log.Info("Received shutdown signal, exiting...")
+	case sig := <-stop:
+		log.Infof("Received signal %v, initiating graceful shutdown...", sig)
 	}
+
+	// Graceful shutdown with 15-second timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(ctx); err != nil {
+		log.Errorf("Graceful shutdown failed: %v", err)
+		os.Exit(1)
+	}
+
+	log.Info("Server shut down gracefully")
 }

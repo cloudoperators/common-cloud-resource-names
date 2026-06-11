@@ -13,7 +13,7 @@ type ValidationBackend interface {
 	GetCRD(ccrnVersion string) (*CRDInfo, error)
 
 	// ValidateResource validates a resource against its schema
-	// For KubernetesBackend, this creates an actual resource
+	// For KubernetesBackend, this uses dry-run create (no resource is persisted)
 	// For FilesystemBackend, this validates against OpenAPI schema
 	ValidateResource(namespace string, parsedCCRN *ParsedResource) error
 

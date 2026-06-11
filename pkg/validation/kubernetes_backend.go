@@ -1,14 +1,12 @@
 // SPDX-FileCopyrightText: 2025 SAP SE or an SAP affiliate company and Greenhouse contributors
 // SPDX-License-Identifier: Apache-2.0
 
-// SPDX-FileCopyrightText: SAP SE or an SAP affiliate company
-// SPDX-License-Identifier: Apache-2.0
-
 package validation
 
 import (
 	"context"
 	"fmt"
+	"io"
 
 	"github.com/cloudoperators/common-cloud-resource-names/pkg/apis"
 
@@ -42,6 +40,11 @@ type KubernetesBackend struct {
 
 // NewKubernetesBackend creates a new Kubernetes validation backend
 func NewKubernetesBackend(config *rest.Config, log *logrus.Logger, ccrnGroup string) (*KubernetesBackend, error) {
+	if log == nil {
+		log = logrus.New()
+		log.SetOutput(io.Discard)
+	}
+
 	// Create Kubernetes client
 	kubeClient, err := kubernetes.NewForConfig(config)
 	if err != nil {
@@ -102,11 +105,12 @@ func (kb *KubernetesBackend) GetCRD(crdVersion string) (*apis.CRDInfo, error) {
 	return crdInfo, nil
 }
 
-// ValidateResource validates a resource by creating it in the Kubernetes cluster
+// ValidateResource validates a resource using dry-run create against the Kubernetes API server.
+// This validates via the API server without persisting the resource.
 func (kb *KubernetesBackend) ValidateResource(namespace string, parsedCCRN *apis.ParsedResource) error {
 
 	// Get CRD info
-	group := parsedCCRN.ApiGroup()
+	group := parsedCCRN.APIGroup()
 	version := parsedCCRN.Version()
 	kind := parsedCCRN.GetKind()
 
@@ -128,12 +132,14 @@ func (kb *KubernetesBackend) ValidateResource(namespace string, parsedCCRN *apis
 		Resource: crdInfo.Plural,
 	}
 
-	// Create the resource
-	kb.log.WithField("resource", resourceObj).Infof("Creating resource %s/%s", namespace, resourceName)
+	// Validate the resource using dry-run create (no resource is persisted)
+	kb.log.WithField("resource", resourceObj).Infof("Dry-run validating resource %s/%s", namespace, resourceName)
 	resourceClient := kb.dynamicClient.Resource(gvr).Namespace(namespace)
-	_, err = resourceClient.Create(context.TODO(), &unstructured.Unstructured{Object: resourceObj}, metav1.CreateOptions{})
+	_, err = resourceClient.Create(context.TODO(), &unstructured.Unstructured{Object: resourceObj}, metav1.CreateOptions{
+		DryRun: []string{metav1.DryRunAll},
+	})
 	if err != nil {
-		return fmt.Errorf("failed to create resource: %w", err)
+		return fmt.Errorf("failed to validate resource (dry-run): %w", err)
 	}
 
 	return nil
