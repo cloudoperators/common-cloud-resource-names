@@ -236,7 +236,11 @@ func (fb *FilesystemBackend) processFile(filePath string, result *CRDLoadingResu
             // Add CRD keys to result for tracking
             for _, version := range crd.Spec.Versions {
                 if version.Served {
-                    crdKey := fb.getCRDKey(crd.Spec.Group, version.Name, crd.Spec.Names.Kind)
+                    keyName := crd.Spec.Names.Singular
+                    if keyName == "" {
+                        keyName = crd.Spec.Names.Kind
+                    }
+                    crdKey := fb.getCRDKey(crd.Spec.Group, version.Name, keyName)
                     result.LoadedCRDKeys = append(result.LoadedCRDKeys, crdKey)
                 }
             }
@@ -414,7 +418,14 @@ func (fb *FilesystemBackend) storeCRD(crd *apiextensionsv1.CustomResourceDefinit
             continue
         }
 
-        crdKey := fb.getCRDKey(crd.Spec.Group, version.Name, crd.Spec.Names.Kind)
+        // Use names.singular as the cache key segment because CCRN resource types
+        // are keyed by the CRD singular name (e.g., "<singular>.<group>/<version>").
+        // Fall back to Kind when singular is not set
+        keyName := crd.Spec.Names.Singular
+        if keyName == "" {
+            keyName = crd.Spec.Names.Kind
+        }
+        crdKey := fb.getCRDKey(crd.Spec.Group, version.Name, keyName)
 
         // Extract URN template from annotations
         urnFormat := fb.extractURNTemplate(crd, version.Name)

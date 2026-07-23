@@ -230,12 +230,16 @@ func (kb *KubernetesBackend) StartRefreshLoop(interval time.Duration) {
 	}()
 }
 
-// getCRDKey generates a cache key for a CRD based on apiVersion and kind
-func (kb *KubernetesBackend) getCRDKey(apiVersion, kind string) string {
-	return strings.ToLower(fmt.Sprintf("%s.%s", kind, apiVersion))
+// getCRDKey generates a cache key from a resource type segment (singular name), group and version.
+func (kb *KubernetesBackend) getCRDKey(group, version, resourceType string) string {
+	return strings.ToLower(fmt.Sprintf("%s.%s/%s", resourceType, group, version))
 }
 
 // getCRDKeyFromCRD generates a cache key from a CRD object
 func (kb *KubernetesBackend) getCRDKeyFromCRD(crd *apiextensionsv1.CustomResourceDefinition, version string) string {
-	return strings.ToLower(fmt.Sprintf("%s.%s/%s", crd.Spec.Names.Kind, crd.Spec.Group, version))
+	keyName := crd.Spec.Names.Singular
+	if keyName == "" {
+		keyName = crd.Spec.Names.Kind
+	}
+	return kb.getCRDKey(crd.Spec.Group, version, keyName)
 }

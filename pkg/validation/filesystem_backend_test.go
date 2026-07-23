@@ -241,5 +241,40 @@ var _ = Describe("FilesystemBackend", func() {
 			// Assert
 			Expect(err).To(HaveOccurred())
 		})
+
+		It("validates a resource whose CRD has a hyphenated singular name", func() {
+			// Arrange: HyphenResource has kind=HyphenResource but singular=hyphen-resource.
+			// CCRNKey() returns "hyphen-resource.tr.ccrn.example.com/v1" (singular-based),
+			// so the validator must be indexed under that key.
+			backend = validation.NewOfflineBackend(logrus.New(), "tr.ccrn.example.com")
+			crdPath := filepath.Join("testdata", "hyphenated_crd.yaml")
+			Expect(backend.LoadCRDs(crdPath)).To(Succeed())
+			parsed := &apis.ParsedResource{Fields: map[string]string{
+				"ccrn":     "hyphen-resource.tr.ccrn.example.com/v1",
+				"instance": "test-01.eu-de-1.cloud.sap",
+			}}
+			// Act
+			err := backend.ValidateResource("default", parsed)
+			// Assert
+			Expect(err).ToNot(HaveOccurred(), "validator should be found via the singular-based key")
+		})
+
+		It("reports a schema validation error (not a missing-validator error) for an invalid resource with a hyphenated singular name", func() {
+			// Arrange
+			backend = validation.NewOfflineBackend(logrus.New(), "tr.ccrn.example.com")
+			crdPath := filepath.Join("testdata", "hyphenated_crd.yaml")
+			Expect(backend.LoadCRDs(crdPath)).To(Succeed())
+			parsed := &apis.ParsedResource{Fields: map[string]string{
+				"ccrn":     "hyphen-resource.tr.ccrn.example.com/v1",
+				"instance": "INVALID INSTANCE!",
+			}}
+			// Act
+			err := backend.ValidateResource("default", parsed)
+			// Assert
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("validation failed for hyphen-resource.tr.ccrn.example.com/v1"))
+			Expect(err.Error()).NotTo(ContainSubstring("no schema validator available"),
+				"should fail schema validation, not a missing-validator lookup")
+		})
 	})
 })
